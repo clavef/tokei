@@ -1,0 +1,40 @@
+name: STUDIO HAZE targeted language tests
+on:
+  push:
+    branches: [studiohaze-targeted-ci]
+permissions:
+  contents: read
+jobs:
+  language-fixtures:
+    if: github.repository == 'clavef/tokei'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 30305f3fe015fa8acfc2c8e1de108ab07c35a423
+          persist-credentials: false
+      - name: Build once and run the two exact language fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version
+          cargo --version
+          cargo test --locked --no-default-features --test accuracy --no-run --message-format=json -j1 > build.json
+          python3 - <<'PY'
+          import json, pathlib, subprocess, hashlib
+          messages = [json.loads(line) for line in pathlib.Path('build.json').read_text().splitlines()]
+          binaries = [m['executable'] for m in messages if m.get('reason') == 'compiler-artifact' and m.get('target', {}).get('name') == 'accuracy' and m.get('executable')]
+          assert len(binaries) == 1, binaries
+          binary = binaries[0]
+          print('test_binary:', binary, 'sha256:', hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest(), flush=True)
+          listing = subprocess.check_output([binary, '--list'], text=True).splitlines()
+          for name in ['topaz', 'lispex']:
+              assert name + ': test' in listing, (name, listing)
+              subprocess.run([binary, name, '--exact', '--nocapture'], check=True)
+          PY
